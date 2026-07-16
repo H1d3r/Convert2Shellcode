@@ -1,101 +1,301 @@
-[English](README.md) | [中文](README_zh.md)
-# Introduce
+# Convert2Shellcode
 
-Two types of SRDI implemented in MASM assembly—**front-style RDI** and **post-tyle RDI**—can convert EXE/DLL into position-independent shellcode.
+Convert2Shellcode 是一个 PE 转 shellcode 工具，可以把 Windows EXE / DLL 转换成可直接加载执行的 raw shellcode bytes。
 
-An **embedded RDI** (improved variant) only supports DLL-to-shellcode conversion. This DLL must export a loader function (e.g., `ReflectiveLoader` or custom names like `HahaLoader`). While challenging for practitioners unfamiliar with RDI, its simplicity has led to wide adoption by C2 frameworks.
+当前支持 x64 / x86，并提供两种 SRDI 布局：
 
-**Current SRDI Limitations**:
-1. EXE's `main` or `wmain` can have parameters.
-2. DLL's `DllMain` must adhere to Microsoft's official specifications. 
-3. EXEs/DLLs written in C# are unsupported.
-4. x64 architecture only.
-   
+- `front`：RDI loader 位于 PE 前方。
+- `post`：RDI loader 位于 PE 后方。
 
-**Embedded RDI Specifics**:
-1. DLL-exclusive conversion.
-2. Requires an exported loader function (name flexibility exists, e.g., `HahaLoader`).
+两种模式都支持 EXE 入口执行、DLL `DllMain` 执行、调用 DLL 指定导出函数，以及传递用户数据。
 
-# Project Structure
+## 当前能力
 
-Convert2Shellcode
-- `Convert2Shellcode_embed.cpp`：C++ version, uses improved RDI (embedded) to convert DLL to shellcode
-- `Convert2Shellcode_embed.go`：Go version, uses improved RDI (embedded) to convert DLL to shellcode
-- `Convert2Shellcode_front.cpp`：C++ version, uses front-style RDI to convert EXE/DLL to shellcode
-- `Convert2Shellcode_front.go`：Go version, uses front-style RDI to convert EXE/DLL to shellcode
-- `Convert2Shellcode_post.cpp`：C++ version, uses post-style RDI to convert EXE/DLL to shellcode
-- `Convert2Shellcode_post.go`：Go version, uses post-style RDI to convert EXE/DLL to shellcode
+- 支持架构：x64 / x86
+- 支持文件：EXE / DLL
+- 支持模式：front / post
+- 支持导入表解析
+- 支持重定位
+- 支持 TLS callback
+- 支持 TLS data
+- 支持 section protection
+- 支持清零原始 PE 数据
+- 支持隐藏映射后 PE header 特征
+- 支持 DLL `DllMain`
+- 支持 EXE entrypoint
+- 支持按导出函数名或导出 hash 调用 DLL export
+- 支持向 DLL export 传递用户数据
+- 支持 Rust EXE 的静态 TLS data 初始化
 
-Debug
-- `DebugForRDI.asm`：ASM file created for debugging and developing RDI, verified for functionality
-- `Sever.py`：Python-written TCP server used with `DebugForRDI.asm`
+当前不支持：
 
-SRDI Asm
-- `RDI_front.asm`：Front-style RDI shellcode
-- `RDI_post.asm`：Post-style RDI shellcode
+- .NET assembly
 
-Test
-- `ReflectiveDLL.cpp`：DLL source code with exported `ReflectiveLoader` function
-- `ReflectiveDLL.dll`：Compiled DLL binary with exported `ReflectiveLoader` function
-- `stager_x64_reverseTcp.asm`：Cobalt Strike-like stager; execute `Sever.py` to start server, then run this ASM to fetch/execute payload
-- `Test_for_dll.cpp`：Test DLL source code
-- `Test_for_dll.dll`：Test DLL binary
-- `Test_for_exe.cpp`：Test EXE source code
-- `Test_for_exe.exe`：Test EXE binary
+## Go 库
 
-# Usage
+模块路径：
 
-```
-1.Convert2Shellcode_post.exe <DLL/EXE Path> [Output File Path]  
-2.Convert2Shellcode_post.exe <DLL/EXE Path> [Output File Path]  
-3.Convert2Shellcode_embed.exe <DLL Path> [Output File Path] [The Export Function Name of Loader]
+```text
+github.com/onedays12/Convert2Shellcode
 ```
 
-Example
+`Convert` 是纯 Go API：输入 PE 字节，输出 RDI shellcode，不依赖 cgo、Windows
+API 或运行时 `bin` 目录。
+
+```go
+package main
+
+import (
+    "os"
+
+    convert2shellcode "github.com/onedays12/Convert2Shellcode"
+)
+
+func main() {
+    pe, _ := os.ReadFile("target.exe")
+    shellcode, err := convert2shellcode.Convert(pe, convert2shellcode.Options{
+        Arch:       convert2shellcode.ArchX64,
+        Layout:     convert2shellcode.LayoutFront,
+        ExportName: "TestExport",
+        UserData:   []byte("ABCD"),
+    })
+    if err != nil {
+        panic(err)
+    }
+    _ = os.WriteFile("target.bin", shellcode, 0o666)
+}
 ```
-PS C:\Users\Xxxxxxxx\Desktop\Convert2Shellcode_v1.0> .\Convert2Shellcode_front.exe .\mimikatz.exe
-╔══════════════════════════════════════════════════════════════════════════════════════╗
-║                           Convert2Shellcode_front                                    ║
-║------------------------------------------------------------------------------------- ║
-║ Function: Use front-style RDI to convert EXE/DLL into position-independent shellcode ║
-║ Author：oneday                                                                       ║
-║ Compilation Date：Jun 12 2025 21:29:52                                               ║
-╚══════════════════════════════════════════════════════════════════════════════════════╝
 
-[+] Successfully opened .
-[*] File size is 1355264
-[+] Memory allocation successful, address is 0x4bc9b040
-[*] 1355264 bytes read into memory
-[+] Memory allocation successful, address is 0x4bdf9040
-[+] Successfully generated shellcode file: s (Size: 1356147 bytes)
+命令行版本位于 `cmd\convert2shellcode`；构建脚本会将其生成到
+`bin\Convert2Shellcode.exe`。
+
+## 构建
+
+要求：
+
+- Windows x64
+- Visual Studio 2022 Build Tools 或完整 Visual Studio
+- VC x64/x86 tools：`ml64.exe`、`ml.exe`、`cl.exe`
+- Python 3
+- Go 1.25+
+
+作为 Go 库使用时，只需要 Go 和仓库中版本化的 RDI assets；不需要 Visual
+Studio、Python 或 `bin` 目录。Visual Studio 与 Python 仅用于重新汇编 ASM、
+构建本地 CLI 和测试 loader。
+
+构建全部工具和 RDI blob：
+
+```bat
+tools\build_convert2shellcode.bat
 ```
 
-Use runshc64.exe with pe2shellcode for verification：[hasherezade/pe_to_shellcode: Converts PE into a shellcode](https://github.com/hasherezade/pe_to_shellcode), or you can write your own loader.
+指定默认示例 PE：
 
-![](https://images-of-oneday.oss-cn-guangzhou.aliyuncs.com/images/2025/06/09/19-07-36-0b50c72fe124b9742c6fec8c67ce04cf-20250609190736-4d79d7.png)
+```bat
+tools\build_convert2shellcode.bat path\to\target.exe
+```
 
-# For More Details
+主要输出：
 
-If you are interested in the implementation details, you can check out this article I wrote：[从SRDI原理剖析再到PE2Shellcode的实现-先知社区](https://xz.aliyun.com/news/18239)
+```text
+bin\Convert2Shellcode.exe
+bin\shellcode_loader.exe
+bin\shellcode_loader_x86.exe
+bin\srdi_front_v2_x64.bin
+bin\srdi_post_v2_x64.bin
+bin\srdi_front_v2_x86.bin
+bin\srdi_post_v2_x86.bin
+```
 
-My blog：[关于这个博客 | onedaybook](https://oneday.gitbook.io/onedaybook)
+构建中间文件会放在系统临时目录，不会在项目目录留下 `.obj` / `.o` / `.pdb` / `.lib` / `.exp`。
 
-# TODO
+## 基本用法
 
-**I will maintain this project, focusing on the following key points:**
-1. **Add x86 support**
-2. **Introduce advanced features**, such as supporting user data, obfuscating PE headers, etc.
-3. **Add support for .NET assemblies**
-4. **Enhance RDI functionalities**, including deferred imports, export conversion, etc.
-5. **Further reduce the size of the srdi shellcode**
-6. **Fix bugs and address issues raised by community members**
+查看帮助：
 
-# Disclaimer
+```bat
+bin\Convert2Shellcode.exe --help
+```
 
-This tool is provided for educational and research purposes only. It is intended for use by security professionals in legally authorized engagements. The author is not responsible for any misuse of this software. Users must ensure that they have proper authorization before using this tool on any system.
+命令格式：
 
-One more thing, I am no longer working in security, don't trace me.
+```bat
+bin\Convert2Shellcode.exe --arch x64|x86 --type front|post --input <pe> --output <bin> [options]
+```
 
+参数：
 
+```text
+--arch x64|x86          目标架构，默认 x64
+--type front|post       SRDI 布局，默认 front
+--input <pe>            输入 EXE / DLL
+--output <bin>          输出 shellcode
+--user-data <file>      从文件读取用户数据并传给 DLL export
+--user-data-hex <hex>   从十六进制字符串读取用户数据并传给 DLL export
+--export-name <name>    调用 DLL 指定导出函数，工具自动计算 ROR13 hash
+--export-hash <value>   调用 DLL 指定导出 hash，支持十进制或 0x 十六进制
+```
 
-test
+注意：`--arch` 必须和输入 PE 的架构一致。例如 x86 PE 要使用 `--arch x86`，x64 PE 要使用 `--arch x64`。
+
+`--output` 生成的是 raw shellcode bytes，不是 PE 文件，不能直接双击运行，需要由 shellcode loader 加载执行。
+
+## EXE 转 shellcode
+
+x64 front：
+
+```bat
+bin\Convert2Shellcode.exe --arch x64 --type front --input target.exe --output target_x64_front.bin
+```
+
+x64 post：
+
+```bat
+bin\Convert2Shellcode.exe --arch x64 --type post --input target.exe --output target_x64_post.bin
+```
+
+x86 front：
+
+```bat
+bin\Convert2Shellcode.exe --arch x86 --type front --input target32.exe --output target_x86_front.bin
+```
+
+x86 post：
+
+```bat
+bin\Convert2Shellcode.exe --arch x86 --type post --input target32.exe --output target_x86_post.bin
+```
+
+## DLL 转 shellcode
+
+默认情况下，DLL 会执行：
+
+```c
+DllMain(hModule, DLL_PROCESS_ATTACH, NULL)
+```
+
+示例：
+
+```bat
+bin\Convert2Shellcode.exe --arch x64 --type front --input target.dll --output target_dll.bin
+```
+
+## 调用 DLL 导出函数
+
+如果需要调用 DLL 中的指定导出函数，可以使用：
+
+```bat
+--export-name <name>
+```
+
+例如：
+
+```bat
+bin\Convert2Shellcode.exe --arch x64 --type front --input target.dll --output out.bin --export-name TestExport
+```
+
+也可以直接指定 hash：
+
+```bat
+bin\Convert2Shellcode.exe --arch x64 --type post --input target.dll --output out.bin --export-hash 0x12345678
+```
+
+导出函数调用约定：
+
+```c
+Export(image_base, user_ptr, user_len)
+```
+
+x64 下参数通过寄存器传递；x86 下按栈参数传递。导出函数内部按自己的约定解析 `user_ptr` / `user_len`。
+
+## 传递用户数据
+
+从文件传递：
+
+```bat
+bin\Convert2Shellcode.exe --arch x64 --type front --input target.dll --output out.bin --export-name TestExport --user-data data.bin
+```
+
+从十六进制字符串传递：
+
+```bat
+bin\Convert2Shellcode.exe --arch x64 --type post --input target.dll --output out.bin --export-name TestExport --user-data-hex 41424344
+```
+
+`Convert2Shellcode.exe` 不定义用户数据里的多参数分隔规则。工具只会把原始字节传给导出函数：
+
+```text
+user_ptr = 用户数据首地址
+user_len = 用户数据长度
+```
+
+多个参数如何分隔，需要由目标 DLL 的导出函数自行约定并解析。如果参数可能包含 `|`、空格、换行或 `\0`，建议使用长度前缀格式，例如：
+
+```text
+argc:u32 + repeated(len:u32 + arg_bytes)
+```
+
+## 加载测试
+
+x64 shellcode：
+
+```bat
+bin\shellcode_loader.exe target_x64_front.bin 15000
+bin\shellcode_loader.exe target_x64_post.bin 15000
+```
+
+x86 shellcode：
+
+```bat
+bin\shellcode_loader_x86.exe target_x86_front.bin 15000
+bin\shellcode_loader_x86.exe target_x86_post.bin 15000
+```
+
+第二个参数是等待 shellcode 线程结束的毫秒数。
+
+## 测试
+
+运行示例验证矩阵：
+
+```bat
+python example\run_rdi_tests.py
+```
+
+当前稳定结果：
+
+```text
+Results: 68/68 passed
+```
+
+## 常见问题
+
+### 生成的 shellcode 没有运行
+
+先确认：
+
+- `--arch` 是否和输入 PE 架构一致。
+- x86 shellcode 是否用 x86 loader 执行。
+- x64 shellcode 是否用 x64 loader 执行。
+- DLL export 名是否真实存在。
+- `--user-data-hex` 是否是偶数字符长度。
+
+### DLL export 没有收到参数
+
+确认命令中同时指定了：
+
+```bat
+--export-name TestExport
+--user-data 或 --user-data-hex
+```
+
+如果只传 `--user-data`，但不指定 export，默认只会执行 DLL `DllMain`。
+
+### front 和 post 怎么选
+
+一般都可以使用。
+
+- `front`：RDI loader 位于 PE 前方。
+- `post`：RDI loader 位于 PE 后方。
+
+两者都支持 x64 / x86、EXE / DLL、export 调用和 user-data。如果没有特殊需求，任选一种并固定使用即可。
+

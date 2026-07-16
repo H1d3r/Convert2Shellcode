@@ -1,0 +1,17 @@
+# Build outputs
+bin/
+
+# Test outputs
+example/out/
+
+# Python
+__pycache__/
+*.pyc
+
+# Visual Studio intermediate files
+*.obj
+*.pdb
+*.lib
+*.exp
+*.ilk
+*.idb
