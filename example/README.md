@@ -5,7 +5,7 @@
 Run the complete regression matrix from the repository root:
 
 ```bat
-py -3 example\run_rdi_tests.py
+python example\run_rdi_tests.py
 ```
 
 运行器会构建公开 RDI 工具链、构建全部 fixture、将其转换为 `front` 和/或

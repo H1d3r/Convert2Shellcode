@@ -4,23 +4,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-static LONG WINAPI loader_veh(EXCEPTION_POINTERS* ep)
-{
-    DWORD code = ep && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionCode : 0;
-    void* addr = ep && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionAddress : NULL;
-    if (ep && ep->ExceptionRecord && code == EXCEPTION_ACCESS_VIOLATION &&
-        ep->ExceptionRecord->NumberParameters >= 2) {
-        printf("[-] unhandled exception: 0x%08lx at %p access=%p mode=%lu\n",
-               code, addr, (void*)ep->ExceptionRecord->ExceptionInformation[1],
-               (DWORD)ep->ExceptionRecord->ExceptionInformation[0]);
-    } else {
-        printf("[-] unhandled exception: 0x%08lx at %p\n", code, addr);
-    }
-    fflush(stdout);
-    TerminateProcess(GetCurrentProcess(), code ? code : 1);
-    return EXCEPTION_EXECUTE_HANDLER;
-}
-
 int main(int argc, char** argv)
 {
     HANDLE h;
@@ -39,8 +22,6 @@ int main(int argc, char** argv)
     if (argc >= 3) {
         wait_ms = (DWORD)strtoul(argv[2], NULL, 0);
     }
-    AddVectoredExceptionHandler(1, loader_veh);
-
     h = CreateFileA(argv[1], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     if (h == INVALID_HANDLE_VALUE) {
         printf("[-] CreateFileA failed: %lu\n", GetLastError());
@@ -99,3 +80,4 @@ int main(int argc, char** argv)
     CloseHandle(thread);
     return 0;
 }
+
