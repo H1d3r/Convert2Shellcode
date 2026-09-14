@@ -1,5 +1,11 @@
 # Convert2Shellcode
 
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+For details, see the [LICENSE](LICENSE) file.
+
 Convert2Shellcode 是一个 PE 转 shellcode 工具，可以把 Windows EXE / DLL 转换成可直接加载执行的 raw shellcode bytes。
 
 当前支持 x64 / x86，并提供两种 SRDI 布局：
